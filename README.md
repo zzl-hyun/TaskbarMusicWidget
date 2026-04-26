@@ -1,6 +1,7 @@
 # Taskbar Music Widget
 
 Windows 11 작업표시줄 근처에서 동작하는 미니 음악 컨트롤 위젯입니다.
+<br>
 ![image](image.png)
 
 이 프로젝트는 다음 기능을 목표로 합니다.
