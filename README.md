@@ -45,10 +45,3 @@ dotnet publish .\TaskbarMusicWidget\TaskbarMusicWidget.csproj -c Release -r win-
 출력 위치:
 
 TaskbarMusicWidget\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish
-
-## GitHub Upload Tips
-
-- 소스코드만 커밋하고 bin, obj는 커밋하지 않습니다.
-- 트레이 아이콘이나 스크린샷을 추가하면 README 가독성이 좋아집니다.
-
-
