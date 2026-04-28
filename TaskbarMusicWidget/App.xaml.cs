@@ -30,6 +30,7 @@ public partial class App : System.Windows.Application
 	private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
 	{
 		WriteLog("DispatcherUnhandledException", e.Exception);
+		System.Windows.Application.Current.Shutdown();
 		e.Handled = true;
 	}
 

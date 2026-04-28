@@ -3,7 +3,7 @@ using Windows.Media.Control;
 
 namespace TaskbarMusicWidget.Services;
 
-public sealed class MediaControlService
+public sealed class MediaControlService : System.IDisposable
 {
     public sealed record PlaybackSnapshot(
         bool HasSession,
@@ -16,9 +16,15 @@ public sealed class MediaControlService
         string? Artist);
 
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
+    private bool _disposed;
 
     public async Task InitializeAsync()
     {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(MediaControlService));
+        }
+
         _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
     }
 
@@ -126,6 +132,17 @@ public sealed class MediaControlService
 
         var candidate = parts[^1].Replace("_", " ");
         return string.IsNullOrWhiteSpace(candidate) ? raw : candidate;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _manager = null;
+        _disposed = true;
     }
 
 

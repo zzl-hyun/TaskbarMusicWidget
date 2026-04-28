@@ -41,16 +41,16 @@ public sealed class TaskbarAnchorService
     }
 
     public bool IsOverflowFlyoutOpen()
-{
-    var overflow1 = FindWindow("NotifyIconOverflowWindow", null);
-    if (overflow1 != IntPtr.Zero && IsWindowVisible(overflow1))
     {
-        return true;
-    }
+        var overflow1 = FindWindow("NotifyIconOverflowWindow", null);
+        if (overflow1 != IntPtr.Zero && IsWindowVisible(overflow1))
+        {
+            return true;
+        }
 
-    var overflow2 = FindWindow("TopLevelWindowForOverflowXamlIsland", null);
-    return overflow2 != IntPtr.Zero && IsWindowVisible(overflow2);
-}
+        var overflow2 = FindWindow("TopLevelWindowForOverflowXamlIsland", null);
+        return overflow2 != IntPtr.Zero && IsWindowVisible(overflow2);
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT

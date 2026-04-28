@@ -16,7 +16,6 @@ namespace TaskbarMusicWidget;
 
 public partial class MainWindow : Window
 {
-    private readonly bool _hardFixedMode = false;
     private const double TaskbarMargin = 8;
     private const string PlayGlyph = "\uE768";
     private const string PauseGlyph = "\uE769";
@@ -33,6 +32,8 @@ public partial class MainWindow : Window
 
     private WinForms.NotifyIcon? _notifyIcon;
     private WinForms.ContextMenuStrip? _trayMenu;
+    private WinForms.ToolStripItem? _showMenuItem;
+    private WinForms.ToolStripItem? _hideMenuItem;
     private readonly System.Windows.Controls.ToolTip _nowPlayingToolTip = new();
     private System.Drawing.Icon? _trayIcon;
     private HwndSource? _hwndSource;
@@ -138,11 +139,11 @@ public partial class MainWindow : Window
             await RefreshPlaybackUiAsync();
             Reposition();
             HandleFullscreenState();
-            InitializeVolumeControl();
         }
-        catch
+        catch (Exception ex)
         {
-            // Global exception handlers in App.xaml.cs will log details.
+            System.Diagnostics.Debug.WriteLine($"MainWindow_Loaded failed: {ex}");
+            throw;
         }
     }
 
@@ -156,11 +157,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void InitializeVolumeControl()
-    {
-        // NAudio initialization is done on-demand in AdjustVolume.
-    }
-
     private async System.Threading.Tasks.Task AdjustVolumeAsync(int direction)
     {
         try
@@ -172,8 +168,9 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var device = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            var sessionManager = device?.AudioSessionManager;
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            var sessionManager = device.AudioSessionManager;
             if (sessionManager is null)
             {
                 return;
@@ -251,10 +248,11 @@ public partial class MainWindow : Window
 
         _trayMenu?.Dispose();
         _trayMenu = new WinForms.ContextMenuStrip();
-        _trayMenu.Items.Add("Show", null, (_, _) => ShowWidget());
-        _trayMenu.Items.Add("Hide", null, (_, _) => HideWidget(true));
+        _showMenuItem = _trayMenu.Items.Add("Show", null, (_, _) => ShowWidget());
+        _hideMenuItem = _trayMenu.Items.Add("Hide", null, (_, _) => HideWidget(true));
         _trayMenu.Items.Add(new WinForms.ToolStripSeparator());
         _trayMenu.Items.Add("Exit", null, (_, _) => ExitApplication());
+        UpdateTrayMenuState();
 
         _notifyIcon = new WinForms.NotifyIcon
         {
@@ -311,12 +309,27 @@ public partial class MainWindow : Window
         Topmost = !_isFullscreenActive;
         EnsureZOrder();
         Reposition();
+        UpdateTrayMenuState();
     }
 
     private void HideWidget(bool userInitiated)
     {
         _isUserHidden = userInitiated;
         Hide();
+        UpdateTrayMenuState();
+    }
+
+    private void UpdateTrayMenuState()
+    {
+        if (_showMenuItem is not null)
+        {
+            _showMenuItem.Enabled = !IsVisible;
+        }
+
+        if (_hideMenuItem is not null)
+        {
+            _hideMenuItem.Enabled = IsVisible;
+        }
     }
 
     private void MainWindow_Deactivated(object? sender, EventArgs e)
@@ -326,7 +339,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Fixed mode: do not alter opacity when focus changes.
         Opacity = 1.0;
         if (!_isFullscreenActive)
         {
@@ -577,17 +589,17 @@ public partial class MainWindow : Window
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e)
     {
-        Reposition();
+        Dispatcher.BeginInvoke(new Action(Reposition));
     }
 
     private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
     {
-        Reposition();
+        Dispatcher.BeginInvoke(new Action(Reposition));
     }
 
     private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
     {
-        Reposition();
+        Dispatcher.BeginInvoke(new Action(Reposition));
     }
 
     private void Reposition()
@@ -597,15 +609,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_hardFixedMode)
-        {
-            var workArea = SystemParameters.WorkArea;
-            Left = workArea.Right - Width - 12;
-            Top = workArea.Bottom - Height - 8;
-            Opacity = 1.0;
-            EnsureZOrder();
-            return;
-        }
 
         if (_taskbarAnchorService.IsOverflowFlyoutOpen())
         {
@@ -765,6 +768,8 @@ public partial class MainWindow : Window
             _trayIcon = null;
         }
 
+        _mediaControlService.Dispose();
+
         base.OnClosed(e);
     }
 
@@ -866,7 +871,6 @@ public partial class MainWindow : Window
             new PointF(26, 42),
             new PointF(42, 32)
         };
-
         using (var playBrush = new SolidBrush(Color.FromArgb(240, 245, 255)))
         {
             graphics.FillPolygon(playBrush, playTriangle);

@@ -51,15 +51,15 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Button x:Name="PrevButton" Grid.Column="0" Click="PrevButton_Click" Style="{StaticResource IconButtonStyle}">
+            <Button x:Name="PrevButton" Grid.Column="0" Click="PrevButton_Click" Style="{StaticResource IconButtonStyle}" AutomationProperties.Name="Previous track">
                 <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
 
-            <Button x:Name="ToggleButton" Grid.Column="1" Click="ToggleButton_Click" Style="{StaticResource IconButtonStyle}">
+            <Button x:Name="ToggleButton" Grid.Column="1" Click="ToggleButton_Click" Style="{StaticResource IconButtonStyle}" AutomationProperties.Name="Play pause">
                 <TextBlock x:Name="ToggleIconText" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
 
-            <Button x:Name="NextButton" Grid.Column="2" Click="NextButton_Click" Style="{StaticResource IconButtonStyle}">
+            <Button x:Name="NextButton" Grid.Column="2" Click="NextButton_Click" Style="{StaticResource IconButtonStyle}" AutomationProperties.Name="Next track">
                 <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
         </Grid>
