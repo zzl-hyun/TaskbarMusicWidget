@@ -1,0 +1,55 @@
+name: C# .NET Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest 
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. .NET 환경 설정
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # 2. 의존성 설치 및 빌드
+      - name: Restore and Build
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+
+      # 3. 배포용 파일 게시 (싱글 파일 설정)
+      - name: Dotnet Publish
+        run: |
+          dotnet publish -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PublishReadyToRun=true `
+            -o ./publish
+
+      # 4. 결과물 압축 (Windows 전용 PowerShell 명령어 사용)
+      - name: Zip Artifacts
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./publish/* -DestinationPath ./project-release-${{ github.ref_name }}.zip
+
+      # 5. GitHub Release 생성 및 파일 업로드
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          files: project-release-${{ github.ref_name }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
