@@ -1,4 +1,6 @@
 ﻿using Microsoft.Win32;
+using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 using System;
 using System.ComponentModel;
 using System.Drawing;
@@ -16,6 +18,8 @@ public partial class MainWindow : Window
 {
     private readonly bool _hardFixedMode = false;
     private const double TaskbarMargin = 8;
+    private const string PlayGlyph = "\uE768";
+    private const string PauseGlyph = "\uE769";
 
     private readonly MediaControlService _mediaControlService = new();
     private readonly TaskbarAnchorService _taskbarAnchorService = new();
@@ -28,6 +32,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _zOrderGuardTimer;
 
     private WinForms.NotifyIcon? _notifyIcon;
+    private WinForms.ContextMenuStrip? _trayMenu;
+    private readonly System.Windows.Controls.ToolTip _nowPlayingToolTip = new();
     private System.Drawing.Icon? _trayIcon;
     private HwndSource? _hwndSource;
     private int _taskbarCreatedMessage;
@@ -37,10 +43,19 @@ public partial class MainWindow : Window
     private bool _isAutoHiddenForFullscreen;
     private bool _isFullscreenActive;
     private TaskbarAnchorService.RectD? _lastGoodAnchor;
+    private WinEventDelegate? _foregroundEventProc;
+    private IntPtr _foregroundEventHook;
 
     public MainWindow()
     {
         InitializeComponent();
+        PreviewMouseWheel += MainWindow_PreviewMouseWheel;
+
+        _nowPlayingToolTip.Content = "No active media session";
+        _nowPlayingToolTip.PlacementTarget = WidgetRoot;
+        _nowPlayingToolTip.Opened += OnNowPlayingToolTipOpened;
+        WidgetRoot.ToolTip = _nowPlayingToolTip;
+        WidgetRoot.ToolTipOpening += async (_, _) => await RefreshPlaybackUiAsync();
 
         Loaded += MainWindow_Loaded;
         SourceInitialized += MainWindow_SourceInitialized;
@@ -61,7 +76,7 @@ public partial class MainWindow : Window
 
         _statusTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(1)
+            Interval = TimeSpan.FromSeconds(2)
         };
         _statusTimer.Tick += async (_, _) => await RefreshPlaybackUiAsync();
         _statusTimer.Start();
@@ -82,7 +97,7 @@ public partial class MainWindow : Window
 
         _fullscreenGuardTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(600)
+            Interval = TimeSpan.FromSeconds(2)
         };
         _fullscreenGuardTimer.Tick += (_, _) => HandleFullscreenState();
         _fullscreenGuardTimer.Start();
@@ -102,6 +117,7 @@ public partial class MainWindow : Window
         _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
         _hwndSource = (HwndSource?)PresentationSource.FromVisual(this);
         _hwndSource?.AddHook(WndProc);
+        InitializeForegroundHook();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -121,11 +137,110 @@ public partial class MainWindow : Window
             await _mediaControlService.InitializeAsync();
             await RefreshPlaybackUiAsync();
             Reposition();
+            HandleFullscreenState();
+            InitializeVolumeControl();
         }
         catch
         {
             // Global exception handlers in App.xaml.cs will log details.
         }
+    }
+
+    private async void MainWindow_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (e.Delta != 0)
+        {
+            var direction = e.Delta > 0 ? 1 : -1;
+            await AdjustVolumeAsync(direction);
+            e.Handled = true;
+        }
+    }
+
+    private void InitializeVolumeControl()
+    {
+        // NAudio initialization is done on-demand in AdjustVolume.
+    }
+
+    private async System.Threading.Tasks.Task AdjustVolumeAsync(int direction)
+    {
+        try
+        {
+            var state = await _mediaControlService.GetSnapshotAsync();
+            var targetName = NormalizeSessionName(state.SessionDisplayName);
+            if (string.IsNullOrWhiteSpace(targetName))
+            {
+                return;
+            }
+
+            var device = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            var sessionManager = device?.AudioSessionManager;
+            if (sessionManager is null)
+            {
+                return;
+            }
+
+            var sessions = sessionManager.Sessions;
+            for (var index = 0; index < sessions.Count; index++)
+            {
+                var session = sessions[index];
+                if (session.IsSystemSoundsSession || session.State != AudioSessionState.AudioSessionStateActive)
+                {
+                    continue;
+                }
+
+                if (!SessionMatchesTarget(session, targetName))
+                {
+                    continue;
+                }
+
+                var volume = session.SimpleAudioVolume;
+                var currentLevel = volume.Volume;
+                var newLevel = Math.Clamp(currentLevel + (direction * 0.05f), 0f, 1f);
+                volume.Volume = newLevel;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Volume adjustment failed: {ex.Message}");
+        }
+    }
+
+    private static bool SessionMatchesTarget(AudioSessionControl session, string targetName)
+    {
+        var displayName = NormalizeSessionName(session.DisplayName);
+        if (!string.IsNullOrWhiteSpace(displayName) && (displayName == targetName || displayName.Contains(targetName) || targetName.Contains(displayName)))
+        {
+            return true;
+        }
+
+        var sessionIdentifier = NormalizeSessionName(session.GetSessionIdentifier);
+        if (!string.IsNullOrWhiteSpace(sessionIdentifier) && (sessionIdentifier == targetName || sessionIdentifier.Contains(targetName) || targetName.Contains(sessionIdentifier)))
+        {
+            return true;
+        }
+
+        var instanceIdentifier = NormalizeSessionName(session.GetSessionInstanceIdentifier);
+        return !string.IsNullOrWhiteSpace(instanceIdentifier) && (instanceIdentifier == targetName || instanceIdentifier.Contains(targetName) || targetName.Contains(instanceIdentifier));
+    }
+
+    private static string NormalizeSessionName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(char.ToLowerInvariant(ch));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private void InitializeTrayIcon()
@@ -134,18 +249,19 @@ public partial class MainWindow : Window
         _trayIcon?.Dispose();
         _trayIcon = BuildTrayIcon();
 
-        var menu = new WinForms.ContextMenuStrip();
-        menu.Items.Add("Show", null, (_, _) => ShowWidget());
-        menu.Items.Add("Hide", null, (_, _) => HideWidget(true));
-        menu.Items.Add(new WinForms.ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitApplication());
+        _trayMenu?.Dispose();
+        _trayMenu = new WinForms.ContextMenuStrip();
+        _trayMenu.Items.Add("Show", null, (_, _) => ShowWidget());
+        _trayMenu.Items.Add("Hide", null, (_, _) => HideWidget(true));
+        _trayMenu.Items.Add(new WinForms.ToolStripSeparator());
+        _trayMenu.Items.Add("Exit", null, (_, _) => ExitApplication());
 
         _notifyIcon = new WinForms.NotifyIcon
         {
             Visible = true,
             Text = "Taskbar Music Widget",
             Icon = _trayIcon,
-            ContextMenuStrip = menu
+            ContextMenuStrip = _trayMenu
         };
 
         _notifyIcon.DoubleClick += (_, _) => ToggleWidgetVisibility();
@@ -360,6 +476,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private void InitializeForegroundHook()
+    {
+        if (_foregroundEventHook != IntPtr.Zero)
+        {
+            return;
+        }
+
+        _foregroundEventProc = OnWinEventForegroundChanged;
+        _foregroundEventHook = SetWinEventHook(
+            EventSystemForeground,
+            EventSystemForeground,
+            IntPtr.Zero,
+            _foregroundEventProc,
+            0,
+            0,
+            WineventOutOfContext | WineventSkipOwnProcess);
+    }
+
+    private void OnWinEventForegroundChanged(
+        IntPtr hWinEventHook,
+        uint eventType,
+        IntPtr hwnd,
+        int idObject,
+        int idChild,
+        uint dwEventThread,
+        uint dwmsEventTime)
+    {
+        if (_isExiting || eventType != EventSystemForeground)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(new Action(HandleFullscreenState), DispatcherPriority.Background);
+    }
+
+    private void OnNowPlayingToolTipOpened(object? sender, RoutedEventArgs e)
+    {
+        if (PresentationSource.FromVisual(_nowPlayingToolTip) is not HwndSource source || source.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        SetWindowPos(
+            source.Handle,
+            HwndTopmost,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder | SwpNoSendChanging);
+    }
+
     private bool IsForegroundWindowFullscreen()
     {
         var fg = GetForegroundWindow();
@@ -505,12 +673,33 @@ public partial class MainWindow : Window
             ToggleButton.IsEnabled = state.CanTogglePlayPause;
             NextButton.IsEnabled = state.CanNext;
 
-            ToggleIconText.Text = state.IsPlaying ? "⏸" : "▶";
+            ToggleIconText.Text = state.IsPlaying ? PauseGlyph : PlayGlyph;
+            _nowPlayingToolTip.Content = BuildNowPlayingTooltip(state);
         }
         finally
         {
             _isStatusUpdating = false;
         }
+    }
+
+    private static string BuildNowPlayingTooltip(MediaControlService.PlaybackSnapshot state)
+    {
+        if (!state.HasSession)
+        {
+            return "No active media session";
+        }
+
+        if (string.IsNullOrWhiteSpace(state.TrackTitle))
+        {
+            return $"{state.SessionDisplayName}: No track metadata";
+        }
+
+        if (string.IsNullOrWhiteSpace(state.Artist))
+        {
+            return $"{state.SessionDisplayName}\n{state.TrackTitle}";
+        }
+
+        return $"{state.SessionDisplayName}\n{state.TrackTitle} - {state.Artist}";
     }
 
     private async void PrevButton_Click(object sender, RoutedEventArgs e)
@@ -544,6 +733,13 @@ public partial class MainWindow : Window
         _fullscreenGuardTimer.Stop();
         _zOrderGuardTimer.Stop();
 
+        if (_foregroundEventHook != IntPtr.Zero)
+        {
+            UnhookWinEvent(_foregroundEventHook);
+            _foregroundEventHook = IntPtr.Zero;
+        }
+        _foregroundEventProc = null;
+
         if (_hwndSource != null)
         {
             _hwndSource.RemoveHook(WndProc);
@@ -555,6 +751,12 @@ public partial class MainWindow : Window
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _notifyIcon = null;
+        }
+
+        if (_trayMenu != null)
+        {
+            _trayMenu.Dispose();
+            _trayMenu = null;
         }
 
         if (_trayIcon != null)
@@ -601,13 +803,39 @@ public partial class MainWindow : Window
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(
+        uint eventMin,
+        uint eventMax,
+        IntPtr hmodWinEventProc,
+        WinEventDelegate lpfnWinEventProc,
+        uint idProcess,
+        uint idThread,
+        uint dwFlags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
     private const uint MonitorDefaultToNearest = 0x00000002;
+    private const uint EventSystemForeground = 0x0003;
+    private const uint WineventOutOfContext = 0x0000;
+    private const uint WineventSkipOwnProcess = 0x0002;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpNoOwnerZOrder = 0x0200;
     private const uint SwpNoSendChanging = 0x0400;
     private static readonly IntPtr HwndTopmost = new(-1);
+
+    private delegate void WinEventDelegate(
+        IntPtr hWinEventHook,
+        uint eventType,
+        IntPtr hwnd,
+        int idObject,
+        int idChild,
+        uint dwEventThread,
+        uint dwmsEventTime);
 
     private static System.Drawing.Icon BuildTrayIcon()
     {

@@ -43,7 +43,7 @@
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="10" Background="#CC1E1E1E" Padding="8">
+    <Border x:Name="WidgetRoot" CornerRadius="10" Background="#CC1E1E1E" Padding="8" ToolTipService.ShowDuration="30000">
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -52,15 +52,15 @@
             </Grid.ColumnDefinitions>
 
             <Button x:Name="PrevButton" Grid.Column="0" Click="PrevButton_Click" Style="{StaticResource IconButtonStyle}">
-                <TextBlock Text="⏮" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBlock Text="&#xE892;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
 
             <Button x:Name="ToggleButton" Grid.Column="1" Click="ToggleButton_Click" Style="{StaticResource IconButtonStyle}">
-                <TextBlock x:Name="ToggleIconText" Text="▶" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBlock x:Name="ToggleIconText" Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
 
             <Button x:Name="NextButton" Grid.Column="2" Click="NextButton_Click" Style="{StaticResource IconButtonStyle}">
-                <TextBlock Text="⏭" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <TextBlock Text="&#xE893;" FontFamily="Segoe MDL2 Assets" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
         </Grid>
     </Border>
