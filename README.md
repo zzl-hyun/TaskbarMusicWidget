@@ -2,7 +2,7 @@
 
 Windows 11 작업표시줄 근처에서 동작하는 미니 음악 컨트롤 위젯입니다.
 <br>
-![image](image.png)
+<img width="352" height="45" alt="image" src="https://github.com/user-attachments/assets/cea9f2c9-0281-4ca4-a6ca-ca8390ffedcd" />
 
 이 프로젝트는 다음 기능을 목표로 합니다.
 
